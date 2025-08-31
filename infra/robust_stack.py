@@ -69,6 +69,33 @@ class RobustNfseStack(Stack):
         lambda_sg = ec2.SecurityGroup(
             self, "LambdaDbSg", vpc=vpc, description="Lambdas to DB"
         )
+        # Permite porta 5432 do SG das Lambdas para o banco
+        db_sg.add_ingress_rule(
+            lambda_sg, ec2.Port.tcp(5432), "Lambda to Aurora (Postgres)"
+        )
+
+        # Aurora PostgreSQL Serverless v2
+        cluster = rds.DatabaseCluster(
+            self,
+            "Aurora",
+            engine=rds.DatabaseClusterEngine.aurora_postgres(
+                version=rds.AuroraPostgresEngineVersion.VER_15_3
+            ),
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
+            ),
+            # credenciais geradas no Secrets Manager
+            credentials=rds.Credentials.from_generated_secret("appadmin"),
+            writer=rds.ClusterInstance.serverless_v2("writer"),
+            readers=[rds.ClusterInstance.serverless_v2("reader1")],
+            # capacidade serverless v2 (em ACU)
+            serverless_v2_min_capacity=0.5,
+            serverless_v2_max_capacity=4,
+            # SGs e lifecycle
+            security_groups=[db_sg],
+            removal_policy=RemovalPolicy.DESTROY,
+        )
 
         # S3 + CloudFront (Admin) + WAF
         admin_bucket = s3.Bucket(
@@ -260,6 +287,9 @@ class RobustNfseStack(Stack):
             ),
             environment={
                 "TABLE_INVOICES": invoices.table_name,
+                "DB_HOST": cluster.cluster_endpoint.hostname,
+                "DB_NAME": "nfse",
+                "DB_SECRET_ARN": cluster.secret.secret_arn,
             },
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(
@@ -271,6 +301,7 @@ class RobustNfseStack(Stack):
 
         # Permissão na tabela
         invoices.grant_read_write_data(processor_fn)
+        cluster.secret.grant_read(processor_fn)
 
         # Disparar a Lambda quando chega mensagem na fila
         processor_fn.add_event_source(
@@ -362,3 +393,5 @@ class RobustNfseStack(Stack):
         CfnOutput(self, "DocsBucketName", value=docs_bucket.bucket_name)
         CfnOutput(self, "ApiKeyId", value=api_key.key_id)
         CfnOutput(self, "VpcId", value=vpc.vpc_id)
+        CfnOutput(self, "AuroraEndpoint", value=cluster.cluster_endpoint.hostname)
+        CfnOutput(self, "AuroraSecretArn", value=cluster.secret.secret_arn)

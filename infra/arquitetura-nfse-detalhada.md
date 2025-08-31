@@ -143,7 +143,7 @@
 - **SQS**: veja mensagens na **RequestsQueue** e na **DLQ**.  
 - **Step Functions**: **Executions** do `EmitWorkflow`.  
 - **CloudFront**: `https://<AdminDistributionDomain>/`.  
-- **Aurora**: usar endpoint (psql/cliente) — schema ainda a criar.
+- **Aurora**: usar endpoint (psql/cliente)
 
 ---
 
