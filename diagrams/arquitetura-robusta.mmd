@@ -1,0 +1,51 @@
+flowchart LR
+  subgraph Clients["Clients"]
+    WEB["Admin Web (S3+CloudFront)"]
+    MOB["Mobile Apps (iOS/Android)"]
+  end
+
+  subgraph Edge["Edge & Security"]
+    R53[Route 53 (DNS)]
+    CF[CloudFront + WAF/Shield]
+  end
+
+  subgraph Web["Web Tier"]
+    S3W[S3 (Static Admin)]
+  end
+
+  subgraph API["API & AuthN/Z"]
+    APIGW[API Gateway (REST) + WAF + Usage Plan]
+    COG[Cognito (User Pool)]
+  end
+
+  subgraph Compute["Business Services"]
+    L_EMIT["Lambda: emit"]
+    L_GET["Lambda: consult"]
+    L_CANCEL["Lambda: cancel"]
+    STEP[Step Functions]
+    SQSQ[SQS + DLQ]
+    ECSF["ECS Fargate (Adapters)"]
+  end
+
+  subgraph Data["Data & Docs"]
+    DDBI["DynamoDB: Invoices"]
+    DDBR["DynamoDB: Requests"]
+    AUR["Aurora PostgreSQL Serverless v2"]
+    S3D["S3: XML/PDF"]
+  end
+
+  WEB-->R53-->CF-->S3W
+  WEB-->R53-->CF-->APIGW
+  MOB-->R53-->CF-->APIGW
+  APIGW-->COG
+  APIGW-->L_EMIT
+  APIGW-->L_GET
+  APIGW-->L_CANCEL
+
+  L_EMIT-->DDBI
+  L_GET-->DDBI
+  L_CANCEL-->DDBI
+  L_EMIT-->S3D
+  L_EMIT--"events"-->STEP
+  STEP--"enqueue"-->SQSQ
+  SQSQ-->ECSF
