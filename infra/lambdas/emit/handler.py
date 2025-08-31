@@ -7,6 +7,12 @@ sfn = boto3.client("stepfunctions")
 TABLE_INVOICES = os.environ["TABLE_INVOICES"]
 BUCKET_DOCS = os.environ["BUCKET_DOCS"]
 SFN_ARN = os.environ.get("SFN_ARN")
+CORS = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization,x-api-key",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+}
 
 
 def lambda_handler(event, context):
@@ -51,7 +57,7 @@ def lambda_handler(event, context):
 
         return {
             "statusCode": 201,
-            "headers": {"Content-Type": "application/json"},
+            "headers": CORS,
             "body": json.dumps(
                 {
                     "invoiceId": invoice_id,

@@ -17,6 +17,7 @@ from aws_cdk import (
     aws_stepfunctions_tasks as tasks,
     aws_wafv2 as wafv2,
     aws_logs as logs,
+    aws_lambda_event_sources as lambda_events,
 )
 
 import os
@@ -203,6 +204,31 @@ class RobustNfseStack(Stack):
         state_machine.grant_start_execution(emit_fn)
         emit_fn.add_environment("SFN_ARN", state_machine.state_machine_arn)
 
+        # cria lambda e conecta a SQS
+
+        # lambda
+        processor_fn = _lambda.Function(
+            self,
+            "ProcessorFn",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            handler="handler.lambda_handler",
+            code=_lambda.Code.from_asset(
+                os.path.join(os.path.dirname(__file__), "lambdas/processor")
+            ),
+            environment={
+                "TABLE_INVOICES": invoices.table_name,
+            },
+            timeout=Duration.seconds(30),
+        )
+
+        # Permissão na tabela
+        invoices.grant_read_write_data(processor_fn)
+
+        # Disparar a Lambda quando chega mensagem na fila
+        processor_fn.add_event_source(
+            lambda_events.SqsEventSource(queue, batch_size=5, enabled=True)
+        )
+
         # API Gateway + WAF + Usage Plan
         log_group = logs.LogGroup(
             self, "ApiLogs", retention=logs.RetentionDays.ONE_WEEK
@@ -230,6 +256,9 @@ class RobustNfseStack(Stack):
                     "Authorization",
                     "X-Requested-With",
                     "X-Idempotency-Key",
+                    "x-api-key",
+                    "X-Amz-Date",
+                    "X-Requested-With",
                 ],
             ),
         )
