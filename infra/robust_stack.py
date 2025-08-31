@@ -33,7 +33,7 @@ class RobustNfseStack(Stack):
         # - public: ALB/Cloud9/Bastion (se precisar)
         # - private-egress: Lambdas/ECS com saída via NAT
         # - isolated: banco (Aurora)
-        vpc = ec2.Vpc(
+        self.vpc = ec2.Vpc(
             self,
             "AppVpc",
             ip_addresses=ec2.IpAddresses.cidr("10.0.0.0/16"),
@@ -57,17 +57,17 @@ class RobustNfseStack(Stack):
         )
 
         # Endpoints de gateway: tráfego p/ S3 e Dynamo não sai pela internet/NAT
-        vpc.add_gateway_endpoint(
+        self.vpc.add_gateway_endpoint(
             "S3Endpoint", service=ec2.GatewayVpcEndpointAwsService.S3
         )
-        vpc.add_gateway_endpoint(
+        self.vpc.add_gateway_endpoint(
             "DynamoEndpoint", service=ec2.GatewayVpcEndpointAwsService.DYNAMODB
         )
 
         # SG do banco e SG das Lambdas que falam com o banco
-        db_sg = ec2.SecurityGroup(self, "DbSg", vpc=vpc, description="Aurora SG")
+        db_sg = ec2.SecurityGroup(self, "DbSg", vpc=self.vpc, description="Aurora SG")
         lambda_sg = ec2.SecurityGroup(
-            self, "LambdaDbSg", vpc=vpc, description="Lambdas to DB"
+            self, "LambdaDbSg", vpc=self.vpc, description="Lambdas to DB"
         )
         # Permite porta 5432 do SG das Lambdas para o banco
         db_sg.add_ingress_rule(
@@ -81,7 +81,7 @@ class RobustNfseStack(Stack):
             engine=rds.DatabaseClusterEngine.aurora_postgres(
                 version=rds.AuroraPostgresEngineVersion.VER_15_3
             ),
-            vpc=vpc,
+            vpc=self.vpc,
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
             ),
@@ -96,6 +96,26 @@ class RobustNfseStack(Stack):
             security_groups=[db_sg],
             removal_policy=RemovalPolicy.DESTROY,
         )
+
+        # 1) Bastion Host em subnet pública
+        bastion_sg = ec2.SecurityGroup(
+            self,
+            "BastionSg",
+            vpc=self.vpc,
+            description="Acesso de admin (psql) ao Aurora",
+            allow_all_outbound=True,
+        )
+        bastion = ec2.BastionHostLinux(
+            self,
+            "DevBastion",
+            vpc=self.vpc,
+            subnet_selection=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+            instance_type=ec2.InstanceType("t3.small"),
+            security_group=bastion_sg,
+        )
+
+        # 2) Libera o DB para o bastion (somente porta padrão do Postgres)
+        cluster.connections.allow_default_port_from(bastion, "Bastion to Aurora (psql)")
 
         # S3 + CloudFront (Admin) + WAF
         admin_bucket = s3.Bucket(
@@ -291,7 +311,7 @@ class RobustNfseStack(Stack):
                 "DB_NAME": "nfse",
                 "DB_SECRET_ARN": cluster.secret.secret_arn,
             },
-            vpc=vpc,
+            vpc=self.vpc,
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
             ),
@@ -392,6 +412,7 @@ class RobustNfseStack(Stack):
         )
         CfnOutput(self, "DocsBucketName", value=docs_bucket.bucket_name)
         CfnOutput(self, "ApiKeyId", value=api_key.key_id)
-        CfnOutput(self, "VpcId", value=vpc.vpc_id)
+        CfnOutput(self, "VpcId", value=self.vpc.vpc_id)
         CfnOutput(self, "AuroraEndpoint", value=cluster.cluster_endpoint.hostname)
         CfnOutput(self, "AuroraSecretArn", value=cluster.secret.secret_arn)
+        CfnOutput(self, "BastionInstanceId", value=bastion.instance_id)
