@@ -18,6 +18,8 @@ from aws_cdk import (
     aws_wafv2 as wafv2,
     aws_logs as logs,
     aws_lambda_event_sources as lambda_events,
+    aws_rds as rds,
+    aws_ec2 as ec2,
 )
 
 import os
@@ -26,6 +28,47 @@ import os
 class RobustNfseStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs: Any) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # VPC 10.0.0.0/16 com 3 tipos de sub-rede:
+        # - public: ALB/Cloud9/Bastion (se precisar)
+        # - private-egress: Lambdas/ECS com saída via NAT
+        # - isolated: banco (Aurora)
+        vpc = ec2.Vpc(
+            self,
+            "AppVpc",
+            ip_addresses=ec2.IpAddresses.cidr("10.0.0.0/16"),
+            max_azs=2,
+            nat_gateways=1,  # dev: 1 NAT p/ reduzir custo (prod: 2)
+            subnet_configuration=[
+                ec2.SubnetConfiguration(
+                    name="public", subnet_type=ec2.SubnetType.PUBLIC, cidr_mask=24
+                ),
+                ec2.SubnetConfiguration(
+                    name="private-egress",
+                    subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
+                    cidr_mask=24,
+                ),
+                ec2.SubnetConfiguration(
+                    name="isolated",
+                    subnet_type=ec2.SubnetType.PRIVATE_ISOLATED,
+                    cidr_mask=24,
+                ),
+            ],
+        )
+
+        # Endpoints de gateway: tráfego p/ S3 e Dynamo não sai pela internet/NAT
+        vpc.add_gateway_endpoint(
+            "S3Endpoint", service=ec2.GatewayVpcEndpointAwsService.S3
+        )
+        vpc.add_gateway_endpoint(
+            "DynamoEndpoint", service=ec2.GatewayVpcEndpointAwsService.DYNAMODB
+        )
+
+        # SG do banco e SG das Lambdas que falam com o banco
+        db_sg = ec2.SecurityGroup(self, "DbSg", vpc=vpc, description="Aurora SG")
+        lambda_sg = ec2.SecurityGroup(
+            self, "LambdaDbSg", vpc=vpc, description="Lambdas to DB"
+        )
 
         # S3 + CloudFront (Admin) + WAF
         admin_bucket = s3.Bucket(
@@ -218,6 +261,11 @@ class RobustNfseStack(Stack):
             environment={
                 "TABLE_INVOICES": invoices.table_name,
             },
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+            ),
+            security_groups=[lambda_sg],
             timeout=Duration.seconds(30),
         )
 
@@ -313,3 +361,4 @@ class RobustNfseStack(Stack):
         )
         CfnOutput(self, "DocsBucketName", value=docs_bucket.bucket_name)
         CfnOutput(self, "ApiKeyId", value=api_key.key_id)
+        CfnOutput(self, "VpcId", value=vpc.vpc_id)
