@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NFS-e — Diagrama de Rede (VPC/Subnets/SGs) v3</title>
+  <style>
+    html, body { background:#ffffff; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; line-height: 1.35; margin: 16px; color:#0f172a; }
+    h1, h2 { margin: 10px 0; }
+    .legend { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:10px 0 16px; }
+    .chip { display:inline-flex; align-items:center; gap:6px; font-size:13px; padding:2px 8px; border-radius:999px; border:1px solid #e5e7eb; background:#f8fafc; }
+    .wrap { background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:12px; margin-bottom:18px; }
+    .muted { color:#475569; font-size:13px; }
+  </style>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.4.0/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      themeVariables: {
+        background: '#ffffff',
+        primaryColor: '#E7F5FF',
+        primaryTextColor: '#0f172a',
+        primaryBorderColor: '#2563eb',
+        lineColor: '#111827',
+        secondaryColor: '#F1F5F9',
+        tertiaryColor: '#FFFFFF',
+        nodeBorder: '#2563eb',
+        clusterBkg: '#F8FAFC',
+        clusterBorder: '#94A3B8'
+      }
+    });
+  </script>
+</head>
+<body>
+  <h1>NFS-e — Diagrama de Rede</h1>
+
+  <div class="wrap">
+    <h2>Topologia (VPC, Subnets, Rotas e Endpoints)</h2>
+    <div class="legend">
+      <span class="chip">Azul = rotas públicas (IGW)</span>
+      <span class="chip">Verde = saída privada via NAT (EIP)</span>
+      <span class="chip">Roxo = VPC Endpoints (tráfego privado)</span>
+      <span class="chip">Laranja = conexões a banco (porta 5432)</span>
+    </div>
+    <div class="mermaid">
+flowchart TB
+  %% VPC
+  subgraph VPC["VPC (2 AZs)"]
+    direction TB
+
+    %% Public Subnets
+    subgraph PUB["Subnets Públicas"]
+      direction TB
+      IGW["Internet Gateway"]
+      NAT1["NAT Gateway (AZ1) + EIP"]
+      NAT2["NAT Gateway (AZ2) + EIP"]
+    end
+
+    %% Private App Subnets
+    subgraph PRIV["Subnets Privadas (App)"]
+      direction TB
+      ECS1["ECS Fargate Tasks (AZ1)"]
+      ECS2["ECS Fargate Tasks (AZ2)"]
+      LBD1["Lambdas em VPC (ENIs)"]
+      BAST["Bastion (SSM)"]
+    end
+
+    %% Isolated Data Subnets
+    subgraph DATA["Subnets Privadas Isoladas (Data)"]
+      direction TB
+      AUR1["Aurora PostgreSQL (writer)"]
+      AUR2["Aurora PostgreSQL (reader)"]
+    end
+
+    %% VPC Endpoints
+    subgraph VPCE["VPC Endpoints"]
+      direction TB
+      S3GW["Gateway Endpoint (S3)"]
+      DDBGW["Gateway Endpoint (DynamoDB)"]
+      SECSTM["Interface (Secrets/STS)"]
+      CWL["Interface (CloudWatch Logs)"]
+      SSMI["Interface (SSM/EC2Messages/SSMMessages)"]
+    end
+  end
+
+  %% Rotas públicas (IGW -> NAT)
+  IGW --> NAT1
+  IGW --> NAT2
+
+  %% Saída privada via NAT (443)
+  ECS1 -->|443| NAT1
+  ECS2 -->|443| NAT2
+  LBD1 -->|443| NAT1
+  BAST -->|443| NAT1
+
+  %% Endpoints privados (VPCE)
+  ECS1 -->|VPCE| S3GW
+  ECS1 -->|VPCE| DDBGW
+  ECS1 -->|VPCE| SECSTM
+  ECS1 -->|VPCE| CWL
+  LBD1 -->|VPCE| S3GW
+  LBD1 -->|VPCE| DDBGW
+  LBD1 -->|VPCE| SECSTM
+  LBD1 -->|VPCE| CWL
+  BAST -->|VPCE| SSMI
+
+  %% Conexões banco (5432)
+  ECS1 -->|5432| AUR1
+  ECS2 -->|5432| AUR1
+  LBD1 -->|5432| AUR1
+  BAST -->|5432| AUR1
+
+  %% Cores das arestas por índice (ordem acima)
+  linkStyle 0,1 stroke:#2563eb,stroke-width:2px;
+  linkStyle 2,3,4,5 stroke:#16a34a,stroke-width:2px;
+  linkStyle 6,7,8,9,10,11,12,13,14 stroke:#7c3aed,stroke-width:2px;
+  linkStyle 15,16,17,18 stroke:#ea580c,stroke-width:2px;
+    </div>
+    <p class="muted">Observação: o tráfego para serviços AWS (S3, DynamoDB, Secrets, CloudWatch, SSM) usa VPC Endpoints e não sai à internet; chamadas a provedores municipais saem via NAT (com EIP para IP fixo).</p>
+  </div>
+
+  <div class="wrap">
+    <h2>Regras de Security Group (resumo)</h2>
+    <div class="mermaid">
+flowchart LR
+  subgraph SGs["Security Groups"]
+    FSG["SG Fargate (egress 443)"]
+    LSG["SG Lambdas (egress 443)"]
+    BSG["SG Bastion (egress 443)"]
+    DSG["SG Aurora (ingress 5432 from FSG/LSG/BSG)"]
+    ESG["SG Endpoints (Interface)"]
+  end
+
+  FSG -->|5432| DSG
+  LSG -->|5432| DSG
+  BSG -->|5432| DSG
+
+  FSG -->|443| ESG
+  LSG -->|443| ESG
+  BSG -->|443| ESG
+
+  FSG -->|443 via NAT| Internet
+  LSG -->|443 via NAT| Internet
+  BSG -->|443 via NAT| Internet
+
+  classDef box fill:#ffffff,stroke:#94a3b8,color:#0f172a,stroke-width:1px;
+  class FSG,LSG,BSG,DSG,ESG box;
+    </div>
+    <ul class="muted">
+      <li><strong>Aurora</strong> aceita <code>ingress 5432</code> somente de <em>SGs</em> confiáveis (Fargate/Lambdas/Bastion).</li>
+      <li><strong>Fargate/Lambdas</strong> não expõem portas — apenas <em>egress 443</em> para internet (via NAT) e para <em>VPC Endpoints</em>.</li>
+      <li><strong>Bastion</strong> acessa via <em>SSM</em> (sem porta 22 pública) e pode usar <code>psql</code> interno.</li>
+    </ul>
+  </div>
+</body>
+</html>
