@@ -1,0 +1,37 @@
+# Python / CDK
+.venv/
+__pycache__/
+*.pyc
+cdk.out/
+*.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+venv/
+infra/venv/*.*
+
+# Credenciais/variáveis locais
+.env
+.env.*
+
+# Ignorar ambientes virtuais
+venv/
+.venv/
+env/
+ENV/
+
+# Ignorar caches do Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyd
+
+# Ignorar arquivos de build
+*.egg-info/
+*.egg
+dist/
+build/

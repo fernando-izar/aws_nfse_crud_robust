@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NFS-e na AWS — Fluxograma (Status v3)</title>
+  <style>
+    html, body { background:#ffffff; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; line-height: 1.35; margin: 16px; color:#0f172a; }
+    .legend { display: inline-flex; gap: 10px; align-items: center; margin: 8px 0 16px; flex-wrap: wrap; }
+    .tag { padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid transparent; }
+    .done { background: #dcfce7; color: #065f46; border-color: #16a34a; }
+    .todo { background: #fff7ed; color: #7c2d12; border-color: #f59e0b; }
+    .opt  { background: #e5e7eb; color: #374151; border-color: #6b7280; }
+    .wrap { background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:12px; }
+  </style>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.4.0/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      themeVariables: {
+        background: '#ffffff',
+        primaryColor: '#E7F5FF',
+        primaryTextColor: '#0f172a',
+        primaryBorderColor: '#2563eb',
+        lineColor: '#111827',
+        secondaryColor: '#F1F5F9',
+        tertiaryColor: '#FFFFFF',
+        nodeBorder: '#2563eb',
+        clusterBkg: '#F8FAFC',
+        clusterBorder: '#94A3B8'
+      }
+    });
+  </script>
+</head>
+<body>
+  <h1>NFS-e na AWS — Fluxograma (Status v3)</h1>
+  <div class="legend">
+    <span class="tag done">Feito</span>
+    <span class="tag opt">Provisionado, mas não usado</span>
+    <span class="tag todo">Pendente / Opcional</span>
+  </div>
+
+  <div class="wrap">
+  <div class="mermaid">
+flowchart LR
+  %% ---- Clients
+  subgraph C["Clientes"]
+    WEB["Admin Web"]
+    MOB["Mobile App (stub)"]
+  end
+
+  %% ---- Edge & Static
+  subgraph EDGE ["Edge e Static Web"]
+    CF["CloudFront (Admin) + WAF"]
+    S3ADMIN["S3 Admin Site"]
+  end
+  WEB --> CF --> S3ADMIN
+
+  %% ---- API & Auth
+  subgraph API ["API e Autenticação"]
+    APIGW["API Gateway (REST, Usage Plan, API Key, WAF)"]
+    AUTHZ["Cognito JWT Authorizer"]
+    COG["Cognito User Pool + Hosted UI"]
+  end
+  CF --> APIGW
+  MOB --> APIGW
+  APIGW --> AUTHZ --> COG
+
+  %% ---- Lambdas
+  subgraph LBD ["Lambdas"]
+    PING["PingFn"]
+    EMIT["EmitFn"]
+    GETF["GetFn"]
+    CANC["CancelFn"]
+  end
+  APIGW --> PING
+  APIGW --> EMIT
+  APIGW --> GETF
+  APIGW --> CANC
+
+  %% ---- Orchestração & Mensageria
+  subgraph ORCH ["Orquestração e Mensageria"]
+    SFN["Step Functions (EmitWorkflow)"]
+    SQS["RequestsQueue"]
+    DLQ["Requests DLQ"]
+    PROC["ProcessorFn (SQS Consumer)"]
+  end
+  EMIT --> SFN --> SQS --> PROC
+
+  %% ---- Adapters Municipais (novo)
+  subgraph ADAPT ["Adapters Municipais (ECS Fargate)"]
+    FARG["ECS Fargate Adapters (consumidor SQS)"]
+    NAT["NAT + EIP (saída)"]
+    PROV["Provedor Municipal (SOAP/REST)"]
+  end
+  %% Integrações: SQS pode acionar Fargate (alternativa ao ProcessorFn)
+  SQS -.-> FARG
+  FARG --> DDBI
+  FARG --> S3DOCS
+  FARG -.-> AUR
+  FARG --> NAT --> PROV
+
+  %% ---- Dados & Documentos
+  subgraph DATA ["Dados e Documentos"]
+    DDBI["DynamoDB InvoicesTable"]
+    DDBR["DynamoDB RequestsTable"]
+    S3DOCS["DocsBucket (XML)"]
+    AUR["Aurora PostgreSQL Serverless v2 (schema pendente)"]
+  end
+  EMIT --> DDBI
+  EMIT --> S3DOCS
+  GETF --> DDBI
+  CANC --> DDBI
+  PROC --> DDBI
+  PROC --> S3DOCS
+  PROC -.-> AUR
+
+  %% ---- Rede
+  subgraph NET ["Rede"]
+    VPC["VPC (2 AZs, NAT, Endpoints)"]
+    BAST["Bastion (SSM)"]
+  end
+  PROC --> VPC
+  AUR --> VPC
+  BAST --> VPC
+  FARG --> VPC
+
+  %% ---- Observabilidade
+  subgraph OBS ["Observabilidade"]
+    CW["CloudWatch Logs/Alarms"]
+    XR["X-Ray"]
+  end
+  PING --> CW
+  EMIT --> CW
+  GETF --> CW
+  CANC --> CW
+  PROC --> CW
+  FARG --> CW
+
+  %% ---- Status por classe
+  classDef done fill:#dcfce7,stroke:#16a34a,color:#065f46,stroke-width:1px;
+  classDef todo fill:#fff7ed,stroke:#f59e0b,color:#7c2d12,stroke-width:1px;
+  classDef opt  fill:#e5e7eb,stroke:#6b7280,color:#374151,stroke-width:1px;
+
+  class WEB,CF,S3ADMIN,APIGW,AUTHZ,COG,PING,EMIT,GETF,CANC,SFN,SQS,DLQ,PROC,DDBI,DDBR,S3DOCS,VPC,BAST,CW done;
+  class MOB,XR,FARG,NAT todo;
+  class AUR opt;
+  </div>
+  </div>
+</body>
+</html>
