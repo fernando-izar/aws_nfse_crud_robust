@@ -17,7 +17,7 @@
 
 ### Admin App (Vite/React) – Dev local
 - **O que é:** App React (Vite) para testes locais, inclusive capturando `id_token` pelo **Hosted UI** do Cognito.
-- **Como é usado:** `yarn dev` abre `http://localhost:5173`; você informa **API URL**, **API Key** (na robusta) e **JWT**.
+- **Como é usado:** `yarn dev` abre `http://localhost:5173`; você informa **API URL**, **API Key** e **JWT**.
 
 ### S3 (DocsBucket) — XML/PDF
 - **O que é:** Bucket para armazenar artefatos fiscais (ex.: `xml/<invoiceId>.xml`).
@@ -100,50 +100,6 @@
 ### X-Ray + Logs “enriquecidos”
 - **O que é:** *tracing* distribuído (latência ponta-a-ponta) + logs estruturados.
 - **Por que:** facilita achar *bottlenecks* e entender a jornada de cada requisição.
-
----
-
-## 3) Fluxo geral (alto nível)
-
-1. **Cliente (Web/Mobile)** → DNS (**Route 53**, quando houver) → **CloudFront** (**WAF**).  
-   - **Admin Web:** CloudFront lê **S3** estático.  
-   - **API:** CloudFront → **API Gateway** (**WAF Regional**).
-2. **Segurança & consumo**  
-   - **WAF CloudFront** filtra requests.  
-   - **WAF API** aplica OWASP + rate-limit.  
-   - **API Key / Usage Plan**: throttle/quota por cliente/ambiente.
-3. **Autenticação/Autorização**  
-   - Login na **Hosted UI** do **Cognito** → **JWT (id_token)**.  
-   - Cliente chama API com `Authorization: Bearer <JWT>` (+ `x-api-key` na robusta).  
-   - **API Gateway** valida o **JWT** e o **Usage Plan** valida a **API Key**.
-4. **Negócio (serverless)**  
-   - `POST /invoices` → **EmitFn**: `PutItem` no **DynamoDB**; `PutObject` do **XML** no **DocsBucket (S3)**; publica **InvoiceIssued** no **EventBridge**; (robusta) aciona **Step Functions** → **SQS**.  
-   - `GET /invoices/{id}` → **GetFn** (Dynamo).  
-   - `POST /invoices/{id}/cancel` → **CancelFn** (Dynamo).
-5. **Assíncrono**  
-   - **Step Functions** → **SQS**: pedidos para processamento pesado.  
-   - **ECS Fargate** (adapters) consome a fila, integra com **prefeituras** (SOAP/REST), persiste/normaliza em **Aurora**, publica eventos de volta.
-6. **Dados & rede**  
-   - Recursos em **VPC**; subnets privadas usam **NAT** quando precisam sair.  
-   - Acesso a **S3/Dynamo** via **Gateway Endpoints** (sem passar no NAT).  
-   - **Aurora** em subnets isoladas; acesso via **Security Groups**.
-7. **Observabilidade**  
-   - **CloudWatch** logs/métricas/alarmes.  
-   - **X-Ray** traçando API → Lambda → Step Functions → fila/adapter.
-
----
-
-## 4) Onde validar cada recurso (dicas rápidas)
-
-- **API URL**: `aws cloudformation describe-stacks ... ApiUrl` → `curl .../public/ping`.  
-- **JWT (id_token)**: Hosted UI do **Cognito** com seu `DOMAIN/CLIENT_ID`.  
-- **Invoices (DynamoDB)**: `get-item` com `invoiceId` ou **Explore items** no console.  
-- **XML (S3)**: `aws s3 ls s3://<DocsBucket>/xml/` e `presign` para baixar.  
-- **WAF**: console do **WAFv2** (CloudFront/Regional) → métricas/blocked requests.  
-- **SQS**: veja mensagens na **RequestsQueue** e na **DLQ**.  
-- **Step Functions**: **Executions** do `EmitWorkflow`.  
-- **CloudFront**: `https://<AdminDistributionDomain>/`.  
-- **Aurora**: usar endpoint (psql/cliente)
 
 ---
 

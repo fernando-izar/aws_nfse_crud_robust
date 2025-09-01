@@ -1,5 +1,7 @@
+# Importa módulo para manipulação de JSON
 import json
 
+# Define os cabeçalhos CORS para permitir requisições de outros domínios
 CORS = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
@@ -8,7 +10,9 @@ CORS = {
 }
 
 
+# Função principal Lambda, chamada a cada requisição
 def lambda_handler(event, context):
+    # Retorna resposta de sucesso para indicar que o serviço está online
     return {
         "statusCode": 200,
         "headers": CORS,
