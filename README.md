@@ -9,12 +9,14 @@ O sistema a ser desenvolvido deve possuir uma área administrativa (web), um apl
 A solução proposta é baseada em uma arquitetura serverless utilizando serviços da AWS, como Lambda, API Gateway, DynamoDB, S3, Cognito, Step Functions e outros.
 Abaixo a lista de arquivos que explicam a arquitetura proposta bem como o status dos itens já implantados e os que ainda serão.
 
-- fluxo para apresencao do projeto : diagrams/fluxo_apresentacao_projeto.md
-- diagrama de sequência : diagrams/diagrama_sequencia.md
-- infraestrutura AWS implantada: diagrams/infrastructure-composer-NfseStack.png
-- fluxograma da arquitetura + status da implementação  : diagrams/nfse-arquitetura-fluxograma-status.png/.html
-- detalhes da arquitetura : diagrams/nfse-arquitetura.md
-- ferramentas da AWS: diagrams/ferramentas-aws.md
-- tela da área administrativa (web): web/admin-app_img.png
-- diagrama de rede em: diagrams/diagrama_rede.html
-- imagem diagrama de rede: diagrams/diagrama_rede.png
+- [Fluxo para apresentação do projeto](diagrams/fluxo_apresentacao_projeto.md)
+- [Diagrama de sequência](diagrams/diagrama_sequencia.md)
+- [Infraestrutura AWS implantada (imagem)](diagrams/infrastructure-composer-NfseStack.png)
+- [Fluxograma da arquitetura + status (PNG)](diagrams/nfse-arquitetura-fluxograma-status.png)
+- [Fluxograma da arquitetura + status (HTML)](diagrams/nfse-arquitetura-fluxograma-status.html)
+- [Detalhes da arquitetura](diagrams/nfse-arquitetura.md)
+- [Ferramentas da AWS](diagrams/ferramentas-aws.md)
+- [Tela da área administrativa (web)](web/admin-app/admin-app_img.png)
+- [Diagrama de rede (HTML)](diagrams/diagrama_rede.html)
+- [Diagrama de rede (PNG)](diagrams/diagrama_rede.png)
+
